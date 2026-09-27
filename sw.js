@@ -1,4 +1,4 @@
-const CACHE_NAME = 'memory-map-v4';
+const CACHE_NAME = 'memory-map-v5';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

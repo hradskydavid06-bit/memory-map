@@ -116,6 +116,36 @@ function removePoiClutter() {
   }
 }
 
+// Guaranteed default checklist items (never empty even if offline or cached)
+const DEFAULT_CHECKLIST = [
+  { id: "chk_film_01", category: "filmy", title: "Celá sága twilight", note: "snad přežiju", checked: false },
+  { id: "chk_film_02", category: "filmy", title: "Příběh žraloka", note: null, checked: false },
+  { id: "chk_film_03", category: "filmy", title: "Tučňáci z Madagaskaru ve filmu", note: null, checked: false },
+  { id: "chk_film_04", category: "filmy", title: "Madagaskar", note: "cuz je to peak proste", checked: false },
+  { id: "chk_film_05", category: "filmy", title: "Arthur a minimojové", note: null, checked: false },
+  { id: "chk_film_06", category: "filmy", title: "Popelka (2015)", note: null, checked: false },
+  { id: "chk_film_07", category: "filmy", title: "Hunger games", note: null, checked: false },
+  { id: "chk_film_08", category: "filmy", title: "Kill bill", note: null, checked: false },
+  { id: "chk_film_09", category: "filmy", title: "Maska", note: null, checked: false },
+  { id: "chk_film_10", category: "filmy", title: "Lorax", note: null, checked: false },
+  { id: "chk_film_11", category: "filmy", title: "Pan včelka", note: null, checked: false },
+  { id: "chk_film_12", category: "filmy", title: "The Darjeeling Limited", note: null, checked: false },
+  { id: "chk_film_13", category: "filmy", title: "Vampires suck", note: null, checked: false },
+  { id: "chk_food_01", category: "jidlo", title: "Tepelně zpracovaný losos 😐", note: "chutnal ale skrz to, ze mi nebylo nejlip tak jsem ho nemohla tak appreciate🫣😭", checked: false },
+  { id: "chk_food_02", category: "jidlo", title: "Husa", note: null, checked: false },
+  { id: "chk_food_03", category: "jidlo", title: "Gyoza knedlíčky", note: null, checked: false },
+  { id: "chk_food_04", category: "jidlo", title: "Holanďan", note: "spectacular give me 14 of them rn", checked: false },
+  { id: "chk_food_05", category: "jidlo", title: "Popeyes", note: "prý mid🙃😭", checked: false },
+  { id: "chk_food_06", category: "jidlo", title: "Chleba s máslem (domácím) medem", note: null, checked: false },
+  { id: "chk_food_07", category: "jidlo", title: "Five guys", note: "mega dobre, holy fuck male hranolky nejsou male", checked: false },
+  { id: "chk_food_08", category: "jidlo", title: "Bramborové placky z pytlíku 😭💀💀", note: "well …. Fucking mid", checked: false },
+  { id: "chk_food_09", category: "jidlo", title: "vegetariánský párek z ikei", note: null, checked: false },
+  { id: "chk_food_10", category: "jidlo", title: "chleba se sádlem (domácím)", note: null, checked: false },
+  { id: "chk_act_01", category: "aktivity", title: "Bowling", note: "dostal jsem na prdel jak malá holka", checked: false },
+  { id: "chk_act_02", category: "aktivity", title: "Curling", note: null, checked: false },
+  { id: "chk_act_03", category: "aktivity", title: "hotel v Brně", note: null, checked: false }
+];
+
 // =========================================================
 // 2. DATA LOADING & PERSISTENCE
 // =========================================================
@@ -123,7 +153,7 @@ async function loadData() {
   let baseItems = [];
   let baseChecklist = [];
   try {
-    const response = await fetch('data.json');
+    const response = await fetch('data.json?v=5', { cache: 'no-cache' });
     if (response.ok) {
       const data = await response.json();
       baseItems = data.items || [];
@@ -131,6 +161,11 @@ async function loadData() {
     }
   } catch (error) {
     console.warn("data.json not loaded via fetch, using fallback base items:", error);
+  }
+
+  // Guaranteed fallback if data.json was empty, cached old version, or offline
+  if (!baseChecklist || baseChecklist.length === 0) {
+    baseChecklist = DEFAULT_CHECKLIST;
   }
 
   // Fallback defaults if data.json was empty or offline
