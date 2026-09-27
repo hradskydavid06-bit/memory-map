@@ -25,8 +25,12 @@
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet" />
 
+  <!-- Firebase App & Firestore SDKs (Real-time live sync for both phones) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <!-- Full Screen Map Container -->
@@ -43,6 +47,7 @@
       <div class="header-brand">
         <span class="brand-heart">💙</span>
         <h1 class="brand-title">Memory Map</h1>
+        <span id="header-sync-dot" class="sync-dot-header" title="Propojeno v reálném čase s Firebase"></span>
       </div>
       <div class="header-actions">
         <button id="btn-open-seznam" class="action-btn" aria-label="Couple Seznam">
@@ -279,6 +284,7 @@
       <div class="seznam-title-wrap">
         <h2>❤️ Couple Seznam</h2>
         <span id="seznam-badge-count" class="seznam-count-badge">0 / 26</span>
+        <span id="seznam-sync-badge" class="seznam-sync-badge" title="Živá synchronizace mezi telefony"><span class="sync-dot"></span> Živě</span>
       </div>
       <button id="btn-close-seznam" class="modal-close-btn" aria-label="Zavřít">✕</button>
     </div>
@@ -331,7 +337,7 @@
   </div>
 
   <!-- Configuration and Logic -->
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

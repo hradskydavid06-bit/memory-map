@@ -1415,3 +1415,47 @@ body.pick-mode #map {
   display: flex;
   justify-content: center;
 }
+
+/* =========================================================
+   REAL-TIME DATABASE SYNC INDICATORS
+   ========================================================= */
+.sync-dot-header {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 6px #10b981;
+  display: inline-block;
+  margin-left: 2px;
+  animation: pulse-sync 2.5s infinite;
+}
+
+.seznam-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+}
+
+.sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 5px #10b981;
+  display: inline-block;
+  animation: pulse-sync 2.5s infinite;
+}
+
+@keyframes pulse-sync {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+

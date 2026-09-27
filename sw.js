@@ -1,4 +1,4 @@
-const CACHE_NAME = 'memory-map-v5';
+const CACHE_NAME = 'memory-map-v6';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -41,10 +41,17 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Fetch Event: Network-first falling back to cache (ensures offline functionality but updates content if online)
+// Fetch Event: Network-first falling back to cache
 self.addEventListener('fetch', event => {
-  // Let Mapbox API requests pass through without caching (or handle them dynamically if needed)
-  if (event.request.url.includes('api.mapbox.com') || event.request.url.includes('tiles.mapbox.com')) {
+  // Let Mapbox and Firebase/Google API requests pass through cleanly
+  if (
+    event.request.url.includes('api.mapbox.com') ||
+    event.request.url.includes('tiles.mapbox.com') ||
+    event.request.url.includes('firestore.googleapis.com') ||
+    event.request.url.includes('googleapis.com') ||
+    event.request.url.includes('firebaseio.com') ||
+    event.request.url.includes('gstatic.com')
+  ) {
     return;
   }
 

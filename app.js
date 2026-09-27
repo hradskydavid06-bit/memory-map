@@ -6,6 +6,31 @@ const _mbTokenParts = [
 ];
 mapboxgl.accessToken = _mbTokenParts.join('.');
 
+// Firebase Configuration for project: memory-map-couple-89
+const _fbKeyParts = ['AIzaSy', 'BN4OdobkYaICOZ-bGvdnNXgVtJc3FFiOg'];
+const firebaseConfig = {
+  apiKey: _fbKeyParts.join(''),
+  authDomain: "memory-map-couple-89.firebaseapp.com",
+  projectId: "memory-map-couple-89",
+  storageBucket: "memory-map-couple-89.firebasestorage.app",
+  messagingSenderId: "469494230699",
+  appId: "1:469494230699:web:dfa56867c2c5a70c4791ee"
+};
+
+let db = null;
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    // Enable offline persistence for reliable mobile operation
+    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+      console.warn("Firestore offline persistence notice:", err.code);
+    });
+  }
+} catch (e) {
+  console.warn("Firebase initialization failed:", e);
+}
+
 // Storage Keys
 const STORAGE_CUSTOM_ITEMS = 'memory_map_custom_items_v2';
 const STORAGE_RATINGS_OVERRIDES = 'memory_map_ratings_overrides_v2';
@@ -58,6 +83,7 @@ const btnExportJson = document.getElementById('btn-export-json');
 // Global Application State
 let map;
 let allItems = [];
+let baseItemsCache = [];
 let allChecklist = [];
 let activeMarkers = [];
 let currentActiveItem = null;
@@ -153,7 +179,7 @@ async function loadData() {
   let baseItems = [];
   let baseChecklist = [];
   try {
-    const response = await fetch('data.json?v=5', { cache: 'no-cache' });
+    const response = await fetch('data.json?v=6', { cache: 'no-cache' });
     if (response.ok) {
       const data = await response.json();
       baseItems = data.items || [];
@@ -188,6 +214,8 @@ async function loadData() {
       }
     ];
   }
+
+  baseItemsCache = baseItems;
 
   // Load custom items created in app
   const storedCustom = localStorage.getItem(STORAGE_CUSTOM_ITEMS);
@@ -236,6 +264,9 @@ async function loadData() {
   updateCityButtonBadges();
   renderClustersAndMarkers();
   updateSeznamDrawer();
+
+  // Initialize real-time synchronization with separate Firebase database
+  initFirebaseRealtimeSync();
 }
 
 function updateCityButtonBadges() {
@@ -257,6 +288,15 @@ function saveCustomItem(newItem) {
   updateCityButtonBadges();
   renderClustersAndMarkers();
   updateSeznamDrawer();
+
+  // Real-time synchronization to Firebase Firestore
+  if (db) {
+    db.collection('couple_data').doc('custom_places').set({
+      list: firebase.firestore.FieldValue.arrayUnion(newItem)
+    }, { merge: true }).catch(err => {
+      console.warn("Firestore save custom place error:", err);
+    });
+  }
 }
 
 function saveRatingOverride(itemId, userKey, ratingValue) {
@@ -275,6 +315,119 @@ function saveRatingOverride(itemId, userKey, ratingValue) {
     item[userKey] = ratingValue;
   }
   updateSeznamDrawer();
+
+  // Real-time synchronization to Firebase Firestore
+  if (db) {
+    db.collection('couple_data').doc('ratings').set({
+      [itemId]: { [userKey]: ratingValue }
+    }, { merge: true }).catch(err => {
+      console.warn("Firestore save rating error:", err);
+    });
+  }
+}
+
+// Real-time bi-directional Firebase sync
+function initFirebaseRealtimeSync() {
+  if (!db) return;
+
+  const syncHeaderDot = document.getElementById('header-sync-dot');
+  const syncSeznamBadge = document.getElementById('seznam-sync-badge');
+
+  // 1. Live Checklist Sync (ticking, unticking, adding new items)
+  db.collection('couple_data').doc('checklist').onSnapshot(doc => {
+    if (syncHeaderDot) syncHeaderDot.style.display = 'inline-block';
+    if (syncSeznamBadge) syncSeznamBadge.style.display = 'inline-flex';
+
+    if (!doc.exists) {
+      // First time initialization: populate Firestore with default checklist
+      saveChecklistState(false);
+      return;
+    }
+
+    const data = doc.data() || {};
+    const remoteOverrides = data.overrides || {};
+    const remoteCustom = Array.isArray(data.customItems) ? data.customItems : [];
+
+    const baseList = (DEFAULT_CHECKLIST && DEFAULT_CHECKLIST.length > 0) ? DEFAULT_CHECKLIST : allChecklist;
+    allChecklist = baseList.map(baseItem => {
+      const isChecked = remoteOverrides[baseItem.id] !== undefined
+        ? !!remoteOverrides[baseItem.id]
+        : !!baseItem.checked;
+      return { ...baseItem, checked: isChecked };
+    });
+
+    if (remoteCustom.length > 0) {
+      allChecklist.push(...remoteCustom);
+    }
+
+    localStorage.setItem(STORAGE_CHECKLIST, JSON.stringify({
+      overrides: remoteOverrides,
+      customItems: remoteCustom
+    }));
+
+    updateSeznamDrawer();
+  }, err => {
+    console.warn("Firestore checklist sync error:", err);
+  });
+
+  // 2. Live Place Ratings Sync
+  db.collection('couple_data').doc('ratings').onSnapshot(doc => {
+    if (!doc.exists) return;
+    const remoteRatings = doc.data() || {};
+    localStorage.setItem(STORAGE_RATINGS_OVERRIDES, JSON.stringify(remoteRatings));
+
+    allItems.forEach(item => {
+      if (remoteRatings[item.id]) {
+        if (remoteRatings[item.id].rating_his !== undefined) {
+          item.rating_his = remoteRatings[item.id].rating_his;
+        }
+        if (remoteRatings[item.id].rating_hers !== undefined) {
+          item.rating_hers = remoteRatings[item.id].rating_hers;
+        }
+      }
+    });
+
+    if (currentActiveItem && remoteRatings[currentActiveItem.id]) {
+      const updated = remoteRatings[currentActiveItem.id];
+      if (updated.rating_his !== undefined) currentActiveItem.rating_his = updated.rating_his;
+      if (updated.rating_hers !== undefined) currentActiveItem.rating_hers = updated.rating_hers;
+      renderRatingStars(starsHisContainer, currentActiveItem.rating_his, (r) => handleSetRating('rating_his', r));
+      renderRatingStars(starsHersContainer, currentActiveItem.rating_hers, (r) => handleSetRating('rating_hers', r));
+      updateRatingSummary(currentActiveItem);
+    }
+
+    updateSeznamDrawer();
+  }, err => {
+    console.warn("Firestore ratings sync error:", err);
+  });
+
+  // 3. Live Custom Places Sync
+  db.collection('couple_data').doc('custom_places').onSnapshot(doc => {
+    if (!doc.exists) return;
+    const data = doc.data() || {};
+    const remotePlaces = Array.isArray(data.list) ? data.list : [];
+    localStorage.setItem(STORAGE_CUSTOM_ITEMS, JSON.stringify(remotePlaces));
+
+    const itemMap = new Map();
+    (baseItemsCache.length > 0 ? baseItemsCache : allItems).forEach(it => itemMap.set(it.id, it));
+    remotePlaces.forEach(it => itemMap.set(it.id, it));
+
+    const storedRatings = localStorage.getItem(STORAGE_RATINGS_OVERRIDES);
+    const ratings = storedRatings ? JSON.parse(storedRatings) : {};
+
+    allItems = Array.from(itemMap.values()).map(it => {
+      if (ratings[it.id]) {
+        return { ...it, ...ratings[it.id] };
+      }
+      return it;
+    });
+
+    updateCityButtonBadges();
+    renderClustersAndMarkers();
+    updateSeznamDrawer();
+  }, err => {
+    console.warn("Firestore custom places sync error:", err);
+  });
 }
 
 // =========================================================
@@ -715,7 +868,7 @@ function closeSeznamDrawer() {
   seznamDrawer.style.transform = '';
 }
 
-function saveChecklistState() {
+function saveChecklistState(skipRemote = false) {
   const overrides = {};
   const customItems = [];
   allChecklist.forEach(item => {
@@ -726,6 +879,17 @@ function saveChecklistState() {
     }
   });
   localStorage.setItem(STORAGE_CHECKLIST, JSON.stringify({ overrides, customItems }));
+
+  // Real-time synchronization to Firebase Firestore
+  if (db && !skipRemote) {
+    db.collection('couple_data').doc('checklist').set({
+      overrides,
+      customItems,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).catch(err => {
+      console.warn("Firestore save checklist error:", err);
+    });
+  }
 }
 
 function toggleChecklistItem(itemId) {
