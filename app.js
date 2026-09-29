@@ -598,8 +598,10 @@ function renderClusterMarker(cluster) {
   const el = document.createElement('div');
   el.className = 'cluster-marker';
   el.innerHTML = `
-    <span class="cluster-count">${items.length}</span>
-    <span class="cluster-label">${getCzechPlural(items.length, 'místo', 'místa', 'míst')}</span>
+    <div class="cluster-marker-inner">
+      <span class="cluster-count">${items.length}</span>
+      <span class="cluster-label">${getCzechPlural(items.length, 'místo', 'místa', 'míst')}</span>
+    </div>
   `;
 
   // Clicking the cluster zooms in smoothly and fits all clustered places into view
@@ -623,7 +625,10 @@ function renderClusterMarker(cluster) {
     }
   });
 
-  const marker = new mapboxgl.Marker({ element: el })
+  const marker = new mapboxgl.Marker({
+    element: el,
+    anchor: 'center'
+  })
     .setLngLat([centerLng, centerLat])
     .addTo(map);
 
@@ -636,21 +641,25 @@ function renderSingleMarker(item) {
   el.className = `custom-marker ${item.type === 'event' ? 'marker-event' : ''}`;
   el.setAttribute('data-id', item.id);
   
-  el.style.backgroundImage = `url('${item.image_url || 'images/coffee.jpg'}')`;
-
-  if (item.is_seznam) {
-    const badge = document.createElement('span');
-    badge.className = 'marker-badge-icon';
-    badge.textContent = '❤️';
-    el.appendChild(badge);
-  }
+  el.innerHTML = `
+    <div class="marker-pin-inner">
+      <div class="marker-pin-photo" style="background-image: url('${item.image_url || 'images/coffee.jpg'}')">
+        ${item.is_seznam ? '<span class="marker-badge-icon">❤️</span>' : ''}
+      </div>
+      <div class="marker-pin-pointer"></div>
+    </div>
+  `;
 
   el.addEventListener('click', (e) => {
     e.stopPropagation();
     openDetailSheet(item, el);
   });
 
-  const marker = new mapboxgl.Marker({ element: el })
+  // CRITICAL: anchor: 'bottom' anchors the needle apex (at 50%, 100%) to the exact ground coordinate
+  const marker = new mapboxgl.Marker({
+    element: el,
+    anchor: 'bottom'
+  })
     .setLngLat([item.longitude, item.latitude])
     .addTo(map);
 
@@ -858,9 +867,20 @@ function handleMapPickCoordinate(lngLat) {
 
   if (tempPickMarker) tempPickMarker.remove();
   const pickEl = document.createElement('div');
-  pickEl.className = 'custom-marker';
-  pickEl.style.backgroundColor = '#38bdf8';
-  tempPickMarker = new mapboxgl.Marker({ element: pickEl })
+  pickEl.className = 'custom-marker pick-marker-preview';
+  pickEl.innerHTML = `
+    <div class="marker-pin-inner">
+      <div class="marker-pin-photo" style="background-color: #0284c7; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 16px rgba(56, 189, 248, 0.9);">
+        <span style="font-size: 18px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));">📍</span>
+      </div>
+      <div class="marker-pin-pointer" style="background: #38bdf8;"></div>
+    </div>
+  `;
+  // CRITICAL: anchor: 'bottom' anchors the needle apex to the exact picked coordinate
+  tempPickMarker = new mapboxgl.Marker({
+    element: pickEl,
+    anchor: 'bottom'
+  })
     .setLngLat([lngLat.lng, lngLat.lat])
     .addTo(map);
 
