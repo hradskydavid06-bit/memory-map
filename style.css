@@ -1459,3 +1459,45 @@ body.pick-mode #map {
   100% { transform: scale(0.95); opacity: 0.8; }
 }
 
+/* Custom Place Actions in Detail Sheet */
+.sheet-custom-actions {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(56, 189, 248, 0.15);
+  display: flex;
+  justify-content: center;
+}
+
+.btn-delete-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-delete-place:active {
+  background: rgba(239, 68, 68, 0.25);
+  transform: scale(0.97);
+}
+
+/* Pulsing highlight when a new place is added */
+.marker-just-added {
+  animation: pulse-new-marker 1.8s infinite alternate !important;
+  box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.6), 0 0 20px rgba(56, 189, 248, 0.8) !important;
+  border-color: #38bdf8 !important;
+}
+
+@keyframes pulse-new-marker {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.18); }
+}
+
+

@@ -30,7 +30,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <!-- Full Screen Map Container -->
@@ -148,6 +148,14 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Custom Place Actions (Delete custom place) -->
+        <div id="sheet-custom-actions" class="sheet-custom-actions" style="display: none;">
+          <button type="button" id="btn-delete-place" class="btn-delete-place">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            <span>Smazat toto místo</span>
+          </button>
         </div>
       </div>
     </div>
@@ -317,6 +325,7 @@
           <option value="filmy">🎬 Filmy</option>
           <option value="jidlo">🍔 Jídlo</option>
           <option value="aktivity">🎯 Aktivity</option>
+          <option value="mista">📍 Místo (na mapě)</option>
         </select>
         <button id="btn-add-quick-checklist" class="seznam-quick-btn" title="Přidat do seznamu">+</button>
       </div>
@@ -337,15 +346,26 @@
   </div>
 
   <!-- Configuration and Logic -->
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=8"></script>
 
-  <!-- PWA Service Worker Registration -->
+  <!-- PWA Service Worker Registration with Auto-Update -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js')
-          .then(reg => console.log('Service Worker registered successfully:', reg.scope))
+          .then(reg => {
+            console.log('Service Worker registered successfully:', reg.scope);
+            reg.update();
+          })
           .catch(err => console.error('Service Worker registration failed:', err));
+
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!refreshing) {
+            refreshing = true;
+            window.location.reload();
+          }
+        });
       });
     }
   </script>

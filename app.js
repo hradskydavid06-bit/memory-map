@@ -52,6 +52,8 @@ const ratingHisDisplay = document.getElementById('rating-his-display');
 const ratingHersDisplay = document.getElementById('rating-hers-display');
 const starsHisContainer = document.getElementById('stars-his');
 const starsHersContainer = document.getElementById('stars-hers');
+const sheetCustomActions = document.getElementById('sheet-custom-actions');
+const btnDeletePlace = document.getElementById('btn-delete-place');
 
 // Creation Modal Elements
 const createModal = document.getElementById('create-modal');
@@ -179,7 +181,7 @@ async function loadData() {
   let baseItems = [];
   let baseChecklist = [];
   try {
-    const response = await fetch('data.json?v=6', { cache: 'no-cache' });
+    const response = await fetch('data.json?v=7', { cache: 'no-cache' });
     if (response.ok) {
       const data = await response.json();
       baseItems = data.items || [];
@@ -220,6 +222,7 @@ async function loadData() {
   // Load custom items created in app
   const storedCustom = localStorage.getItem(STORAGE_CUSTOM_ITEMS);
   const customItems = storedCustom ? JSON.parse(storedCustom) : [];
+  customItems.forEach(it => { it.isCustom = true; });
 
   // Merge items
   const itemMap = new Map();
@@ -279,12 +282,28 @@ function updateCityButtonBadges() {
 }
 
 function saveCustomItem(newItem) {
+  newItem.isCustom = true;
+
   const storedCustom = localStorage.getItem(STORAGE_CUSTOM_ITEMS);
   const customList = storedCustom ? JSON.parse(storedCustom) : [];
-  customList.push(newItem);
+
+  // Update existing item if present, or prepend new one
+  const existingIdx = customList.findIndex(it => it.id === newItem.id);
+  if (existingIdx >= 0) {
+    customList[existingIdx] = newItem;
+  } else {
+    customList.push(newItem);
+  }
   localStorage.setItem(STORAGE_CUSTOM_ITEMS, JSON.stringify(customList));
 
-  allItems.push(newItem);
+  // Update in-memory allItems
+  const allIdx = allItems.findIndex(it => it.id === newItem.id);
+  if (allIdx >= 0) {
+    allItems[allIdx] = newItem;
+  } else {
+    allItems.push(newItem);
+  }
+
   updateCityButtonBadges();
   renderClustersAndMarkers();
   updateSeznamDrawer();
@@ -292,11 +311,43 @@ function saveCustomItem(newItem) {
   // Real-time synchronization to Firebase Firestore
   if (db) {
     db.collection('couple_data').doc('custom_places').set({
-      list: firebase.firestore.FieldValue.arrayUnion(newItem)
+      list: customList,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true }).catch(err => {
       console.warn("Firestore save custom place error:", err);
     });
   }
+}
+
+function deleteCustomPlace(itemId) {
+  if (!confirm('Opravdu chcete toto místo odstranit z mapy?')) {
+    return;
+  }
+
+  // 1. Remove from in-memory allItems
+  allItems = allItems.filter(it => it.id !== itemId);
+
+  // 2. Remove from localStorage
+  const storedCustom = localStorage.getItem(STORAGE_CUSTOM_ITEMS);
+  const customList = storedCustom ? JSON.parse(storedCustom) : [];
+  const updatedList = customList.filter(it => it.id !== itemId);
+  localStorage.setItem(STORAGE_CUSTOM_ITEMS, JSON.stringify(updatedList));
+
+  // 3. Update Firestore in the cloud
+  if (db) {
+    db.collection('couple_data').doc('custom_places').set({
+      list: updatedList,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(err => {
+      console.warn("Firestore delete custom place error:", err);
+    });
+  }
+
+  // 4. Update UI
+  updateCityButtonBadges();
+  renderClustersAndMarkers();
+  updateSeznamDrawer();
+  closeDetailSheet();
 }
 
 function saveRatingOverride(itemId, userKey, ratingValue) {
@@ -391,9 +442,8 @@ function initFirebaseRealtimeSync() {
       const updated = remoteRatings[currentActiveItem.id];
       if (updated.rating_his !== undefined) currentActiveItem.rating_his = updated.rating_his;
       if (updated.rating_hers !== undefined) currentActiveItem.rating_hers = updated.rating_hers;
-      renderRatingStars(starsHisContainer, currentActiveItem.rating_his, (r) => handleSetRating('rating_his', r));
-      renderRatingStars(starsHersContainer, currentActiveItem.rating_hers, (r) => handleSetRating('rating_hers', r));
-      updateRatingSummary(currentActiveItem);
+      renderRatingWidget('his', currentActiveItem.rating_his);
+      renderRatingWidget('hers', currentActiveItem.rating_hers);
     }
 
     updateSeznamDrawer();
@@ -406,10 +456,19 @@ function initFirebaseRealtimeSync() {
     if (!doc.exists) return;
     const data = doc.data() || {};
     const remotePlaces = Array.isArray(data.list) ? data.list : [];
+    
+    // Tag all remote places as custom
+    remotePlaces.forEach(p => { p.isCustom = true; });
     localStorage.setItem(STORAGE_CUSTOM_ITEMS, JSON.stringify(remotePlaces));
 
     const itemMap = new Map();
-    (baseItemsCache.length > 0 ? baseItemsCache : allItems).forEach(it => itemMap.set(it.id, it));
+    // Add base items
+    (baseItemsCache.length > 0 ? baseItemsCache : allItems).forEach(it => {
+      if (!it.isCustom && !it.id.startsWith('plc_17') && !it.id.startsWith('evt_17')) {
+        itemMap.set(it.id, it);
+      }
+    });
+    // Overlay remote custom places
     remotePlaces.forEach(it => itemMap.set(it.id, it));
 
     const storedRatings = localStorage.getItem(STORAGE_RATINGS_OVERRIDES);
@@ -466,19 +525,18 @@ function renderClustersAndMarkers() {
   const zoom = map.getZoom();
 
   // Dynamic Geographic Clustering Threshold (in km)
-  // - Zoom < 11.5 (Zoomed out over Czech Republic): maxDistKm = 30 km.
-  //   Guarantees all points in Brno (10) and Prague (7) bulk into EXACTLY ONE cluster marker each.
-  //   Zero scattering, zero "snake" lines across the city!
-  // - Zoom 11.5 - 12.8: maxDistKm = 2.0 km (districts separate).
-  // - Zoom >= 12.8 (Zoomed in on city / neighborhood): maxDistKm = 0.05 km.
-  //   Completely divides into individual place markers!
+  // - Zoom < 10.8 (Zoomed out over Czech Republic): maxDistKm = 35 km.
+  //   Guarantees all points in Brno and Prague bulk into ONE clean cluster marker each.
+  // - Zoom 10.8 - 12.0: maxDistKm = 1.5 km (districts separate).
+  // - Zoom >= 12.0 (City view): maxDistKm = 0.005 km (5 meters).
+  //   EVERY individual place separates into its own photo pin!
   let maxDistKm;
-  if (zoom < 11.5) {
-    maxDistKm = 30.0;
-  } else if (zoom < 12.8) {
-    maxDistKm = 2.0;
+  if (zoom < 10.8) {
+    maxDistKm = 35.0;
+  } else if (zoom < 12.0) {
+    maxDistKm = 1.5;
   } else {
-    maxDistKm = 0.05;
+    maxDistKm = 0.005;
   }
 
   // Connected-component graph clustering using GPS Haversine distance
@@ -544,19 +602,25 @@ function renderClusterMarker(cluster) {
     <span class="cluster-label">${getCzechPlural(items.length, 'místo', 'místa', 'míst')}</span>
   `;
 
-  // Clicking the cluster zooms in smoothly right into the cluster and splits it into individual pins!
+  // Clicking the cluster zooms in smoothly and fits all clustered places into view
   el.addEventListener('click', (e) => {
     e.stopPropagation();
 
-    // Zoom in smoothly right into the cluster to split it into multiple pins
-    const nextZoom = Math.max(map.getZoom() + 3.4, 13.8);
-    map.flyTo({
-      center: [centerLng, centerLat],
-      zoom: nextZoom,
-      speed: 1.25,
-      curve: 1.3,
-      essential: true
-    });
+    if (items.length > 0) {
+      const bounds = new mapboxgl.LngLatBounds();
+      items.forEach(it => bounds.extend([it.longitude, it.latitude]));
+      if (bounds.getNorthEast().distanceTo(bounds.getSouthWest()) < 10) {
+        map.flyTo({
+          center: [centerLng, centerLat],
+          zoom: Math.max(map.getZoom() + 3.2, 14.5),
+          speed: 1.25,
+          curve: 1.3,
+          essential: true
+        });
+      } else {
+        map.fitBounds(bounds, { padding: 90, maxZoom: 15.2, speed: 1.3, curve: 1.2, essential: true });
+      }
+    }
   });
 
   const marker = new mapboxgl.Marker({ element: el })
@@ -600,9 +664,23 @@ document.querySelectorAll('.filter-pill').forEach(pill => {
       const city = pill.getAttribute('data-city');
       closeAllSheets();
       if (city === 'brno') {
-        map.flyTo({ center: [16.607, 49.193], zoom: 14.2, speed: 1.3, essential: true });
+        const brnoItems = allItems.filter(it => it.longitude > 15.5);
+        if (brnoItems.length > 0) {
+          const bounds = new mapboxgl.LngLatBounds();
+          brnoItems.forEach(it => bounds.extend([it.longitude, it.latitude]));
+          map.fitBounds(bounds, { padding: 80, maxZoom: 14.6, speed: 1.3, essential: true });
+        } else {
+          map.flyTo({ center: [16.607, 49.193], zoom: 14.2, speed: 1.3, essential: true });
+        }
       } else if (city === 'praha') {
-        map.flyTo({ center: [14.435, 50.082], zoom: 13.8, speed: 1.3, essential: true });
+        const prahaItems = allItems.filter(it => it.longitude <= 15.5);
+        if (prahaItems.length > 0) {
+          const bounds = new mapboxgl.LngLatBounds();
+          prahaItems.forEach(it => bounds.extend([it.longitude, it.latitude]));
+          map.fitBounds(bounds, { padding: 80, maxZoom: 14.6, speed: 1.3, essential: true });
+        } else {
+          map.flyTo({ center: [14.435, 50.082], zoom: 13.8, speed: 1.3, essential: true });
+        }
       }
       return;
     }
@@ -660,6 +738,10 @@ function openDetailSheet(item, markerEl) {
 
   renderRatingWidget('his', item.rating_his);
   renderRatingWidget('hers', item.rating_hers);
+
+  if (sheetCustomActions) {
+    sheetCustomActions.style.display = item.isCustom ? 'block' : 'none';
+  }
 
   // Smoothly center the marker in the visible top half above the bottom sheet
   const bottomPadding = Math.min(window.innerHeight * 0.44, 340);
@@ -724,6 +806,15 @@ function closeDetailSheet() {
 }
 
 sheetBackdrop.addEventListener('click', closeDetailSheet);
+
+if (btnDeletePlace) {
+  btnDeletePlace.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (currentActiveItem && currentActiveItem.isCustom) {
+      deleteCustomPlace(currentActiveItem.id);
+    }
+  });
+}
 
 // =========================================================
 // 5. IN-APP CREATION MODAL & MAP PICKER
@@ -823,7 +914,8 @@ createForm.addEventListener('submit', (e) => {
     is_seznam: isSeznam,
     rating_his: ratingHis,
     rating_hers: ratingHers,
-    status: 'visited'
+    status: 'visited',
+    isCustom: true
   };
 
   saveCustomItem(newItem);
@@ -840,9 +932,32 @@ createForm.addEventListener('submit', (e) => {
 
   closeCreateModal();
 
+  // Reset filter to 'all' if current filter would hide this item
+  if (currentFilter !== 'all' && currentFilter !== newItem.type) {
+    currentFilter = 'all';
+    document.querySelectorAll('.filter-pill:not(.city-btn)').forEach(p => {
+      p.classList.toggle('active', p.getAttribute('data-filter') === 'all');
+    });
+    renderClustersAndMarkers();
+  }
+
+  // Smoothly fly directly to the newly placed pin at city-level zoom
+  map.flyTo({
+    center: [newItem.longitude, newItem.latitude],
+    zoom: 15.2,
+    speed: 1.35,
+    curve: 1.2,
+    essential: true
+  });
+
   setTimeout(() => {
     openDetailSheet(newItem);
-  }, 300);
+    const markerEl = document.querySelector(`.custom-marker[data-id="${newItem.id}"]`);
+    if (markerEl) {
+      markerEl.classList.add('marker-just-added');
+      setTimeout(() => markerEl.classList.remove('marker-just-added'), 4000);
+    }
+  }, 400);
 });
 
 // =========================================================
@@ -926,6 +1041,14 @@ if (btnAddQuickChecklist && inputNewChecklistTitle) {
   const handleAdd = () => {
     const title = inputNewChecklistTitle.value;
     const cat = selectNewChecklistCategory ? selectNewChecklistCategory.value : 'filmy';
+    if (cat === 'mista') {
+      closeSeznamDrawer();
+      openCreateModal();
+      const titleInput = document.getElementById('input-title');
+      if (titleInput) titleInput.value = title.trim();
+      inputNewChecklistTitle.value = '';
+      return;
+    }
     if (title.trim()) {
       addQuickChecklistItem(title, cat);
       inputNewChecklistTitle.value = '';
@@ -961,7 +1084,11 @@ function updateSeznamDrawer() {
 
   // Tab: Místa (Places on the map)
   if (currentSeznamTab === 'mista') {
-    const seznamPlaces = allItems.filter(it => it.is_seznam);
+    // Show all user-created places FIRST, followed by other saved places
+    const customPlaces = allItems.filter(it => it.isCustom);
+    const baseSeznamPlaces = allItems.filter(it => !it.isCustom && it.is_seznam);
+    const seznamPlaces = [...customPlaces, ...baseSeznamPlaces];
+
     if (seznamPlaces.length === 0) {
       seznamItemsList.innerHTML = `
         <div style="text-align: center; padding: 30px 10px; color: var(--text-muted);">
@@ -982,7 +1109,10 @@ function updateSeznamDrawer() {
       card.innerHTML = `
         <img src="${item.image_url || 'images/coffee.jpg'}" alt="${escapeHtml(item.title)}" class="seznam-card-img" />
         <div class="seznam-card-info">
-          <span class="seznam-card-title">${escapeHtml(item.title)}</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+            <span class="seznam-card-title">${escapeHtml(item.title)}</span>
+            ${item.isCustom ? `<span style="font-size: 0.65rem; background: rgba(56, 189, 248, 0.15); color: #0284c7; padding: 2px 6px; border-radius: 6px; font-weight: 700; white-space: nowrap;">⭐ Vaše místo</span>` : ''}
+          </div>
           <span class="seznam-card-sub">${escapeHtml(item.category || '')} ${item.date ? '• ' + formatDate(item.date) : ''}</span>
           <div class="seznam-card-ratings">
             ${hisScoreText ? `<span class="mini-rating-tag">${hisScoreText}</span>` : ''}
@@ -990,13 +1120,23 @@ function updateSeznamDrawer() {
             ${!hisScoreText && !hersScoreText ? `<span class="mini-rating-tag" style="opacity:0.6;">Zatím nehodnoceno</span>` : ''}
           </div>
         </div>
+        ${item.isCustom ? `
+          <button class="btn-delete-check" title="Smazat místo" aria-label="Smazat" style="margin-right: 6px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+        ` : ''}
       `;
 
-      card.addEventListener('click', () => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-delete-check')) {
+          e.stopPropagation();
+          deleteCustomPlace(item.id);
+          return;
+        }
         closeSeznamDrawer();
         map.flyTo({
           center: [item.longitude, item.latitude],
-          zoom: 14.5,
+          zoom: 15.2,
           speed: 1.3,
           essential: true
         });
