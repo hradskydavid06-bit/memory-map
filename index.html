@@ -30,7 +30,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <!-- Full Screen Map Container -->
@@ -68,8 +68,9 @@
         <button class="filter-pill" data-filter="event">✨ Události</button>
         <button class="filter-pill" data-filter="place">📍 Místa</button>
         <button class="filter-pill" data-filter="seznam">❤️ Couple Seznam</button>
-        <button class="filter-pill city-btn" data-city="brno">🏙️ Brno (10)</button>
-        <button class="filter-pill city-btn" data-city="praha">🏰 Praha (7)</button>
+        <button class="filter-pill city-btn" data-dest="praha">🏰 Praha</button>
+        <button class="filter-pill city-btn" data-dest="brno">🏙️ Brno</button>
+        <button class="filter-pill city-btn" data-dest="sloup">🌲 Sloup</button>
       </div>
     </div>
   </header>
@@ -346,7 +347,7 @@
   </div>
 
   <!-- Configuration and Logic -->
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 
   <!-- PWA Service Worker Registration with Auto-Update -->
   <script>

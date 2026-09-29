@@ -272,13 +272,75 @@ async function loadData() {
   initFirebaseRealtimeSync();
 }
 
+function getLocationCategory(item) {
+  // Distance from Prague center (50.082, 14.435)
+  if (getDistanceKm(item.latitude, item.longitude, 50.082, 14.435) <= 16) {
+    return { id: 'praha', name: '🏰 Praha' };
+  }
+  // Distance from Brno center (49.193, 16.607)
+  if (getDistanceKm(item.latitude, item.longitude, 49.193, 16.607) <= 12) {
+    return { id: 'brno', name: '🏙️ Brno' };
+  }
+  // Distance from Sloup (49.415, 16.739)
+  if (getDistanceKm(item.latitude, item.longitude, 49.415, 16.739) <= 10) {
+    return { id: 'sloup', name: '🌲 Sloup' };
+  }
+  // Any other custom destination
+  const title = item.category && item.category !== 'Výlety' && item.category !== 'Různé'
+    ? item.category
+    : item.title;
+  return { id: `other_${item.id}`, name: `📍 ${title}` };
+}
+
 function updateCityButtonBadges() {
-  const brnoCount = allItems.filter(it => it.longitude > 15.5).length;
-  const prahaCount = allItems.filter(it => it.longitude <= 15.5).length;
-  const btnBrno = document.querySelector('.filter-pill[data-city="brno"]');
-  const btnPraha = document.querySelector('.filter-pill[data-city="praha"]');
-  if (btnBrno) btnBrno.textContent = `🏙️ Brno (${brnoCount})`;
-  if (btnPraha) btnPraha.textContent = `🏰 Praha (${prahaCount})`;
+  const container = document.getElementById('filter-pills');
+  if (!container) return;
+
+  // Remove existing destination buttons
+  container.querySelectorAll('.city-btn').forEach(btn => btn.remove());
+
+  const prahaItems = allItems.filter(it => getLocationCategory(it).id === 'praha');
+  const brnoItems = allItems.filter(it => getLocationCategory(it).id === 'brno');
+  const sloupItems = allItems.filter(it => getLocationCategory(it).id === 'sloup');
+
+  const destinations = [
+    { id: 'praha', name: '🏰 Praha', count: prahaItems.length, items: prahaItems },
+    { id: 'brno', name: '🏙️ Brno', count: brnoItems.length, items: brnoItems },
+    { id: 'sloup', name: '🌲 Sloup', count: sloupItems.length, items: sloupItems }
+  ];
+
+  // Group any other places
+  const otherItems = allItems.filter(it => {
+    const locId = getLocationCategory(it).id;
+    return locId !== 'praha' && locId !== 'brno' && locId !== 'sloup';
+  });
+
+  const otherGroups = new Map();
+  otherItems.forEach(it => {
+    const loc = getLocationCategory(it);
+    if (!otherGroups.has(loc.id)) {
+      otherGroups.set(loc.id, { id: loc.id, name: loc.name, items: [] });
+    }
+    otherGroups.get(loc.id).items.push(it);
+  });
+
+  otherGroups.forEach(group => {
+    destinations.push({
+      id: group.id,
+      name: group.name,
+      count: group.items.length,
+      items: group.items
+    });
+  });
+
+  destinations.forEach(dest => {
+    if (dest.count === 0) return;
+    const btn = document.createElement('button');
+    btn.className = 'filter-pill city-btn';
+    btn.setAttribute('data-dest', dest.id);
+    btn.textContent = `${dest.name} (${dest.count})`;
+    container.appendChild(btn);
+  });
 }
 
 function saveCustomItem(newItem) {
@@ -525,15 +587,15 @@ function renderClustersAndMarkers() {
   const zoom = map.getZoom();
 
   // Dynamic Geographic Clustering Threshold (in km)
-  // - Zoom < 10.8 (Zoomed out over Czech Republic): maxDistKm = 35 km.
-  //   Guarantees all points in Brno and Prague bulk into ONE clean cluster marker each.
-  // - Zoom 10.8 - 12.0: maxDistKm = 1.5 km (districts separate).
-  // - Zoom >= 12.0 (City view): maxDistKm = 0.005 km (5 meters).
-  //   EVERY individual place separates into its own photo pin!
+  // - Zoom < 9.5 (Country view): maxDistKm = 7.5 km.
+  //   Clusters all spots in Prague together (~6 km diameter) and all spots in Brno together (~2.5 km diameter).
+  //   Sloup (26.5 km from Brno) is NEVER clustered into Brno - it stands alone as its own visible pin!
+  // - Zoom 9.5 - 11.5: maxDistKm = 1.5 km (districts separate, Sloup stays independent).
+  // - Zoom >= 11.5 (City view): maxDistKm = 0.005 km (5 meters, every individual spot splits).
   let maxDistKm;
-  if (zoom < 10.8) {
-    maxDistKm = 35.0;
-  } else if (zoom < 12.0) {
+  if (zoom < 9.5) {
+    maxDistKm = 7.5;
+  } else if (zoom < 11.5) {
     maxDistKm = 1.5;
   } else {
     maxDistKm = 0.005;
@@ -666,35 +728,38 @@ function renderSingleMarker(item) {
   activeMarkers.push(marker);
 }
 
-// Filter pills & City Buttons click handling
-document.querySelectorAll('.filter-pill').forEach(pill => {
-  pill.addEventListener('click', () => {
+// Filter pills & Destination Buttons click handling (delegated on #filter-pills)
+const filterPillsContainer = document.getElementById('filter-pills');
+if (filterPillsContainer) {
+  filterPillsContainer.addEventListener('click', (e) => {
+    const pill = e.target.closest('.filter-pill');
+    if (!pill) return;
+
     if (pill.classList.contains('city-btn')) {
-      const city = pill.getAttribute('data-city');
+      const destId = pill.getAttribute('data-dest');
       closeAllSheets();
-      if (city === 'brno') {
-        const brnoItems = allItems.filter(it => it.longitude > 15.5);
-        if (brnoItems.length > 0) {
-          const bounds = new mapboxgl.LngLatBounds();
-          brnoItems.forEach(it => bounds.extend([it.longitude, it.latitude]));
-          map.fitBounds(bounds, { padding: 80, maxZoom: 14.6, speed: 1.3, essential: true });
-        } else {
-          map.flyTo({ center: [16.607, 49.193], zoom: 14.2, speed: 1.3, essential: true });
-        }
-      } else if (city === 'praha') {
-        const prahaItems = allItems.filter(it => it.longitude <= 15.5);
-        if (prahaItems.length > 0) {
-          const bounds = new mapboxgl.LngLatBounds();
-          prahaItems.forEach(it => bounds.extend([it.longitude, it.latitude]));
-          map.fitBounds(bounds, { padding: 80, maxZoom: 14.6, speed: 1.3, essential: true });
-        } else {
-          map.flyTo({ center: [14.435, 50.082], zoom: 13.8, speed: 1.3, essential: true });
-        }
+      document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+
+      const destItems = allItems.filter(it => getLocationCategory(it).id === destId);
+      if (destItems.length === 1) {
+        const single = destItems[0];
+        map.flyTo({
+          center: [single.longitude, single.latitude],
+          zoom: 15.2,
+          speed: 1.3,
+          essential: true
+        });
+        setTimeout(() => openDetailSheet(single), 400);
+      } else if (destItems.length > 1) {
+        const bounds = new mapboxgl.LngLatBounds();
+        destItems.forEach(it => bounds.extend([it.longitude, it.latitude]));
+        map.fitBounds(bounds, { padding: 80, maxZoom: 14.6, speed: 1.3, essential: true });
       }
       return;
     }
 
-    document.querySelectorAll('.filter-pill:not(.city-btn)').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
     pill.classList.add('active');
     currentFilter = pill.getAttribute('data-filter');
     renderClustersAndMarkers();
@@ -703,7 +768,7 @@ document.querySelectorAll('.filter-pill').forEach(pill => {
       map.flyTo({ center: [15.5, 49.8], zoom: 7.2, speed: 1.2, essential: true });
     }
   });
-});
+}
 
 // =========================================================
 // 4. DETAIL BOTTOM SHEET & DUAL RATINGS
